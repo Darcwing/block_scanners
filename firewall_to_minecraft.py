@@ -35,7 +35,7 @@ def unblock_ip(ip):
     except subprocess.CalledProcessError as e:
         print(f"Error unblocking IP {ip}: {e}")
 
-def handle_packet(packet, x, y, z):
+def handle_packet(packet, SCAN_THRESHOLD, BLOCK_DURATION):
     if TCP in packet and packet[TCP].flags == "S":  # SYN flag
         src_ip = packet[IP].src
         port = packet[TCP].dport
@@ -54,7 +54,6 @@ def handle_packet(packet, x, y, z):
         if scan_tracker[src_ip]["count"] > SCAN_THRESHOLD:
             print(f"IP {src_ip} exceeded scan limit, blocking...")
             block_ip(src_ip)
-            # send_to_minecraft(src_ip, port, x, y, z)
             unblock_time = current_time + BLOCK_DURATION
             unblock_tasks.append({"ip": src_ip, "unblock_time": unblock_time})
             print(f"IP {src_ip} will be unblocked at {unblock_time.strftime('%Y-%m-%d %H:%M:%S')}")
@@ -69,16 +68,16 @@ def unblock_expired_ips():
 
 def main():
     if len(sys.argv) != 4:
-        print("Usage: python block_scanners.py \{Threshold\} \{BLOCK_DURATION\} \n future will add Arguments for duration and threshold")
+        print("Usage: python block_scanners.py \{Threshold\} \{BLOCK_DURATION\}")
         sys.exit(1)
 
-    SCAN_THRESHOLD, BLOCK_DURATION, z = sys.argv[1], sys.argv[2]
+    SCAN_THRESHOLD, BLOCK_DURATION = sys.argv[1], sys.argv[2]
 
     print("Starting port scan detection...")
     while True:
         try:
             # Sniff for 5 seconds, then check unblocks
-            sniff(filter="tcp", prn=lambda packet: handle_packet(packet, x, y, z), timeout=5)
+            sniff(filter="tcp", prn=lambda packet: handle_packet(packet, SCAN_THRESHOLD, BLOCK_DURATION), timeout=5)
             unblock_expired_ips()
         except Exception as e:
             print(f"Error in sniff loop: {e}")
