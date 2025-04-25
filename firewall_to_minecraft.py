@@ -2,18 +2,13 @@ from scapy.all import *
 import subprocess
 from collections import defaultdict
 from datetime import datetime, timedelta
-from mcrcon import MCRcon
 import time
 import sys
 
-# Minecraft RCON settings
-RCON_PASSWORD = 'Subscribe2GnarCoding!'
-RCON_PORT = 25575
-
 # Scan tracking
 scan_tracker = defaultdict(lambda: {"count": 0, "timestamp": None})
-BLOCK_DURATION = timedelta(minutes=10)
-SCAN_THRESHOLD = 0  # Scans to trigger block/zombie
+BLOCK_DURATION = timedelta(minutes=120) # unblock scanner's IP after {BLOCK_DURATION} / 120 minutes
+SCAN_THRESHOLD = 50  # Scans to trigger block
 unblock_tasks = []
 
 def is_ip_blocked(ip):
@@ -40,29 +35,13 @@ def unblock_ip(ip):
     except subprocess.CalledProcessError as e:
         print(f"Error unblocking IP {ip}: {e}")
 
-def send_to_minecraft(ip, port, x, y, z):
-    """Spawn zombie in Minecraft."""
-    ip_parts = ip.split('.')
-    masked_ip = f"{ip_parts[0]}.x.x.{ip_parts[3]}"
-    custom_name = f"{masked_ip}:{port}"
-    try:
-        with MCRcon('localhost', RCON_PASSWORD, RCON_PORT) as mcr:
-            command = f'summon zombie {x} {y} {z} {{CustomName:"\\"{custom_name}\\""}}'
-            mcr.command(command)
-            print(f"Spawned zombie for IP: {custom_name} at coordinates ({x}, {y}, {z})")
-    except Exception as e:
-        print(f"Error spawning zombie for IP {masked_ip}: {e}")
-
 def handle_packet(packet, x, y, z):
     if TCP in packet and packet[TCP].flags == "S":  # SYN flag
         src_ip = packet[IP].src
         port = packet[TCP].dport
         current_time = datetime.now()
 
-        # Print IP with .x.x for the middle 2 bytes
-        ip_parts = src_ip.split('.')
-        masked_ip = f"{ip_parts[0]}.x.x.{ip_parts[3]}"
-        print(f"Scan detected on port {port} from {masked_ip}")
+        print(f"Scan detected on port {port} from {src_ip}")
 
         # Update scan tracker
         if scan_tracker[src_ip]["timestamp"] and current_time - scan_tracker[src_ip]["timestamp"] > BLOCK_DURATION:
@@ -73,12 +52,12 @@ def handle_packet(packet, x, y, z):
 
         # Check if threshold exceeded
         if scan_tracker[src_ip]["count"] > SCAN_THRESHOLD:
-            print(f"IP {src_ip} exceeded scan limit, blocking and spawning zombie...")
+            print(f"IP {src_ip} exceeded scan limit, blocking...")
             block_ip(src_ip)
-            send_to_minecraft(src_ip, port, x, y, z)
+            # send_to_minecraft(src_ip, port, x, y, z)
             unblock_time = current_time + BLOCK_DURATION
             unblock_tasks.append({"ip": src_ip, "unblock_time": unblock_time})
-            print(f"IP {masked_ip} will be unblocked at {unblock_time.strftime('%Y-%m-%d %H:%M:%S')}")
+            print(f"IP {src_ip} will be unblocked at {unblock_time.strftime('%Y-%m-%d %H:%M:%S')}")
 
 def unblock_expired_ips():
     """Unblock IPs whose duration has expired."""
@@ -90,10 +69,10 @@ def unblock_expired_ips():
 
 def main():
     if len(sys.argv) != 4:
-        print("Usage: python firewall_to_minecraft.py <x> <y> <z>")
+        print("Usage: python block_scanners.py \{Threshold\} \{BLOCK_DURATION\} \n future will add Arguments for duration and threshold")
         sys.exit(1)
 
-    x, y, z = sys.argv[1], sys.argv[2], sys.argv[3]
+    SCAN_THRESHOLD, BLOCK_DURATION, z = sys.argv[1], sys.argv[2]
 
     print("Starting port scan detection...")
     while True:
